@@ -1,0 +1,323 @@
+---
+title: "Assignment_1_Decision_Trees"
+author: "Sushmitha Meduri"
+date: "2024-04-12"
+output: html_document
+---
+
+```{r}
+# Loading necessary libraries
+library(dplyr)
+library(tidyverse)
+library(tree)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+```
+
+```{r}
+# Load cleaned data, "youth_data.Rdata" file from my local device
+
+filepath <- "D:\\1_MASTERS\\3rd quarter-Spring 2024\\Machine learning 2\\Youth_Parse_data_assignment_1\\youth_data.Rdata"
+
+load(filepath)
+```
+
+# Load cleaned data file, "youth_data.csv" from my local device
+
+#youth_data <- read_csv("D:/1_MASTERS/3rd quarter-Spring 2024/Machine learning 2/Youth_Parse_data_assignment_1/youth_data.csv", show_col_types = FALSE)
+
+#view the head of the file
+#head(youth_data)
+
+```{r}
+# Handling Missing Values (Explore the data to decide the best approach)**
+df <- df %>% na.omit()
+```
+
+
+```{r}
+# Correlation plot for all the numeric variables
+df %>% 
+   select(where(is.numeric)) %>% 
+   cor() %>% 
+   corrplot::corrplot() 
+```
+```{r}
+# Quantitative variable: Regression
+
+# Recode IRCIGFM 91 and 93 to 0 as they are never used cigarettes for convince as the data is just for 1 year, both of the code represet non-usage of cigarette.
+
+df$ircigfm <- ifelse(df$ircigfm %in% c(91, 93), 0, df$ircigfm)
+```
+
+```{r}
+# Divide data into train and test sets
+set.seed(123)  # for reproducibility
+train_index <- sample(1:nrow(df), 0.8 * nrow(df))  # 80% for training
+train_df <- df[train_index, ]
+test_df <- df[-train_index, ]
+```
+
+
+```{r}
+# Choosing predictors from "df"
+predictor_variables <- c(demographic_cols, youth_experience_cols)
+```
+
+
+```{r}
+set.seed(1)
+# Define target and predictor variables for ircigfm with train data
+y_reg_train <- train_df$ircigfm
+X_reg_train <- train_df[, predictor_variables]
+
+
+# Test data 
+y_reg_test <- test_df$ircigfm
+X_reg_test <- test_df[, predictor_variables]
+```
+
+```{r}
+
+# Plotting tree using rpart.plot
+tree_1 <- rpart(y_reg_train ~ ., data = X_reg_train)
+rpart.plot(tree_1)
+
+```
+
+
+```{r}
+# Train decision tree model
+tree.model_reg <- tree(y_reg_train ~ ., data = X_reg_train)
+summary(tree.model_reg)
+```
+```{r}
+#Plot tree
+plot(tree.model_reg)
+text(tree.model_reg, pretty = 0)
+```
+As we see the tree "YOSELL2" which is Youth sold illegal drugs seems to be a potential variable and the tree start from his predictor.
+
+
+```{r}
+# Make predictions on the test set
+pred_reg <- predict(tree.model_reg, newdata = X_reg_test)
+
+# Calculate mean squared error (MSE)
+mse_ircigfm <- mean((pred_reg - y_reg_test)^2)
+print(paste("Mean Squared Error for Cigarette Frequency:", mse_ircigfm))
+```
+The test MSE is 3.4427 for Cigarette frequency using decision trees for regression.
+
+```{r}
+# Find optimal tree size
+cv_reg <- cv.tree(tree.model_reg)
+optimal_tree_size <- cv_reg$size[which.min(cv_reg$dev)]
+```
+
+```{r}
+install.packages("conflicted")
+library(conflicted)
+
+# Set conflict resolution to "error"
+conflict_prefer("randomForest", winner = "randomForest")
+
+```
+
+
+```{r}
+# Prune the tree to the optimal size
+pruned_tree_reg <- prune.tree(tree.model_reg, best = optimal_tree_size)
+
+# Plot pruned tree
+plot(pruned_tree_reg)
+text(pruned_tree_reg, pretty = 0)
+
+```
+
+
+#random forest
+
+```{r}
+# Train bagging model with all predictors and importance
+rf_model_reg <- randomForest(y_reg_train ~ ., 
+                              data = X_reg_train, 
+                              importance = TRUE,
+                              ntree = 500)
+```
+
+```{r}
+# Variable importance
+varImpPlot(rf_model_reg, cex = 0.6)
+```
+
+
+```{r}
+# Make predictions on the test set
+pred_reg_rf <- predict(rf_model_reg, newdata = X_reg_test)
+
+# Calculate mean squared error (MSE) on the test set
+mse_ircigfm_rf <- mean((pred_reg_rf - y_reg_test)^2)
+print(paste("Mean Squared Error for Cigarette Frequency (Random Forest):", mse_ircigfm_rf))
+```
+Using random forest regression, the test MSE value is decreased to 2.677. This means ensemble methods have improved our accuracy by 1%.
+
+
+```{r}
+# Binary Classification: Modeling for alcflag (Any Alcohol Ever Used)
+# Define target and predictor variables for alcflag
+set.seed(123)
+
+predictors <- c(demographic_cols, youth_experience_cols)
+
+# Create a binary variable indicating alcohol use
+df_binary <- df %>%
+  mutate(alcohol_used = ifelse(alcflag == 1, "Yes", "No"))
+
+# Split data into training and testing sets (80-20 split)
+train_indices <- sample(1:nrow(df_binary), 0.8 * nrow(df_binary))
+train_df <- df_binary[train_indices, ]
+test_df <- df_binary[-train_indices, ]
+
+
+# Convert alcohol_used to factor with two levels
+train_df$alcohol_used <- factor(train_df$alcohol_used, levels = c("No", "Yes"))
+
+```
+
+```{r}
+# Train decision tree classification model
+alc_tree_model <- tree(alcohol_used ~ ., data = train_df[, c(predictors, "alcohol_used")])
+summary(alc_tree_model)
+```
+
+
+```{r}
+#Plot tree
+plot(alc_tree_model)
+text(alc_tree_model, pretty = 0)
+```
+
+Based on the tree YFLTMRJ2:1 which represents "How youth feel when they try Marijuana" is considered as a strong predictor when we predict "alcflag".
+
+
+```{r}
+alc_tree_model
+```
+
+```{r}
+# Make predictions on the test set
+alc_tree_pred <- predict(alc_tree_model,test_df, type = "class")
+
+
+# Calculate accuracy
+accuracy_alc_tree <- mean(alc_tree_pred == test_df$alcohol_used)
+cat("Alcohol binary classification accuracy (Decision Tree):", accuracy_alc_tree)
+```
+Using decision trees, the accuracy is 79.97%.
+
+```{r}
+# Optimize decision tree using cross-validation
+cv_bin <- cv.tree(alc_tree_model, FUN = prune.misclass)
+
+par(mfrow = c(1, 2))
+plot(cv_bin$size, cv_bin$dev, type = 'b',xlab = "Tree Size", ylab = "Deviance")
+plot(cv_bin$k, cv_bin$dev, type = 'b')
+optimal_tree_size <- cv_bin$size[which.min(cv_bin$dev)]
+cat("Optimal tree size:", optimal_tree_size, "\n")
+```
+Here the optimal tree size is 3 using the elbow rule.
+
+```{r}
+# Train Random Forest model
+
+rf_model <- randomForest(alcohol_used ~ ., data = train_df[, c(predictors, "alcohol_used")], mtry = sqrt(ncol(train_df)), importance = TRUE)
+
+varImpPlot(rf_model, cex=0.6)
+```
+
+```{r}
+# Predict test set using Random Forest
+rf_pred <- predict(rf_model, newdata = test_df)
+
+# Calculate accuracy
+accuracy_rf <- mean(rf_pred == test_df$alcohol_used)
+cat("Alcohol binary classification accuracy (Random Forest):", accuracy_rf)
+```
+Using, ensemble methods, the accuracy has increased to 81.26%.
+
+```{r}
+
+# Marijuana Use Frequency Multi-class Classification
+marijuana_multiclass_train <- train_df %>%
+  mutate(mrj_use_category = factor(mrjydays, levels = 1:6, labels = c("1-11 Days", "12-49 Days", "50-99 Days", "100-299 Days", "300-365 Days", "Non User")))
+
+marijuana_multiclass_test <- test_df %>%
+  mutate(mrj_use_category = factor(mrjydays, levels = 1:6, labels = c("1-11 Days", "12-49 Days", "50-99 Days", "100-299 Days", "300-365 Days", "Non User")))
+
+```
+
+
+```{r}
+# Train decision tree classification model
+mrj_tree <- tree(mrj_use_category ~ ., data = marijuana_multiclass_train[, c(predictors, "mrj_use_category")])
+summary(mrj_tree)
+```
+```{r}
+plot(mrj_tree)
+text(mrj_tree, pretty = 0)
+```
+It seems like the predictor yflmjmo:1 HOW YTH FEELS: PEERS USING MARIJUANA MONTHLY strongly or partially disapprove as a strong predictor.
+
+```{r}
+mrj_tree_pred <- predict(mrj_tree, marijuana_multiclass_test, type = "class")
+mrj_tree_acc <- mean(mrj_tree_pred == marijuana_multiclass_test$mrj_use_category)
+cat("Marijuana multi-class classification accuracy (Decision Tree):", mrj_tree_acc, "\n")
+
+```
+The accuracy for classifying the multi-class classification is 86.4%.
+
+```{r}
+# Train random forest classification model using random forest
+mrj_rf <- randomForest(
+  mrj_use_category ~ ., 
+  data = marijuana_multiclass_train[, c(predictors, "mrj_use_category")],
+  mtry = sqrt(ncol(marijuana_multiclass_train) - 1), # Number of variables randomly sampled as candidates at each split
+  ntree = 400 # Number of trees to grow
+)
+mrj_rf
+```
+```{r}
+mrj_rf_pred <- predict(mrj_rf, marijuana_multiclass_test, type = "class")
+mrj_rf_acc <- mean(mrj_rf_pred == marijuana_multiclass_test$mrj_use_category)
+cat("Marijuana multi-class classification accuracy (Random Forest):", mrj_rf_acc, "\n")
+```
+Accuracy after using Random Forest is 86.3%.
+
+Examining ensemble methods like random forest the accuracy remains the same at 86%. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
